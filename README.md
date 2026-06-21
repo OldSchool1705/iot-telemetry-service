@@ -1,48 +1,48 @@
 # IoT Telemetry Service
 
-Production-ready Node.js backend для_ingestion и аналитики телеметрии IoT-устройств.
+Production-ready Node.js backend for IoT telemetry data ingestion and analytics.
 
-## Архитектура
+## Architecture
 
-Проект построен по принципам **Clean Architecture** с чётким разделением слоёв:
+The project follows **Clean Architecture** principles with strict layer separation:
 
 ```
 src/
-  domain/              -- Бизнес-логика (чистый код, без зависимостей от фреймворков)
-    entities/          -- Device, TelemetryMetric, интерфейсы репозиториев
-    value-objects/     -- DeviceType, MetricName, IngestTelemetryDTO (Zod-схемы)
+  domain/              -- Pure business logic (no framework dependencies)
+    entities/          -- Device, TelemetryMetric, repository interfaces
+    value-objects/     -- DeviceType, MetricName, IngestTelemetryDTO (Zod schemas)
     errors/            -- DomainError, DeviceNotFoundError, InvalidTelemetryError, DeviceInactiveError
-  application/         -- Use cases (оркестрация domain + infrastructure)
+  application/         -- Use cases (orchestrate domain + infrastructure)
     use-cases/         -- IngestTelemetryUseCase, GetDeviceAnalyticsUseCase
     dto/               -- GetAnalyticsQuerySchema
-  infrastructure/      -- Адаптеры внешних сервисов
+  infrastructure/      -- External service adapters
     database/prisma/   -- PrismaDeviceRepository, PrismaTelemetryRepository, PrismaAnalyticsRepository
-    cache/redis/       -- Redis-клиент, RedisIdempotencyStore
+    cache/redis/       -- Redis client, RedisIdempotencyStore
     queue/rabbitmq/    -- RabbitMQClient, TelemetryProducer, TelemetryConsumer
-    container.ts       -- IoC-контейнер (Awilix)
-  interfaces/          -- Механизмы доставки
-    http/              -- Express-приложение, контроллеры, middleware
-  shared/              -- Общие утилиты
-    result.ts          -- Result-монада для обработки ошибок
-    logger.ts          -- Pino-логгер с трассировкой через AsyncLocalStorage
+    container.ts       -- Awilix IoC container
+  interfaces/          -- Delivery mechanisms
+    http/              -- Express app, controllers, middleware
+  shared/              -- Cross-cutting concerns
+    result.ts          -- Result monad for error handling
+    logger.ts          -- Pino logger with AsyncLocalStorage trace propagation
 ```
 
-## Технологический стек
+## Tech Stack
 
-| Компонент | Технология |
+| Component | Technology |
 |---|---|
 | Runtime | Node.js >= 20 |
-| Язык | TypeScript 5.7+ (strict mode) |
-| HTTP-фреймворк | Express 4 |
+| Language | TypeScript 5.7+ (strict mode) |
+| HTTP Framework | Express 4 |
 | ORM | Prisma 6 |
-| БД | PostgreSQL 16 |
-| Кэш / Idempotency | Redis 7 |
+| Database | PostgreSQL 16 |
+| Cache / Idempotency | Redis 7 |
 | Message Broker | RabbitMQ 3 |
-| DI-контейнер | Awilix |
-| Валидация | Zod |
-| Логирование | Pino |
-| Тестирование | Vitest, Testcontainers |
-| Контейнеризация | Docker, Docker Compose |
+| DI Container | Awilix |
+| Validation | Zod |
+| Logging | Pino |
+| Testing | Vitest, Testcontainers |
+| Containerization | Docker, Docker Compose |
 
 ## API Endpoints
 
@@ -52,7 +52,7 @@ src/
 GET /health
 ```
 
-Ответ:
+Response:
 ```json
 { "status": "ok", "timestamp": "2026-06-21T12:00:00.000Z" }
 ```
@@ -63,7 +63,7 @@ GET /health
 POST /api/v1/telemetry
 ```
 
-Тело запроса:
+Request body:
 ```json
 {
   "deviceId": "550e8400-e29b-41d4-a716-446655440000",
@@ -79,15 +79,15 @@ POST /api/v1/telemetry
 }
 ```
 
-- `deviceId` (UUID, обязателен)
-- `metrics` (1-100 элементов в массиве)
-  - `name` (1-128 символов, `[a-zA-Z0-9._-]`)
-  - `value` (число, обязательно)
-  - `unit` (строка, до 32 символов, опционально)
-  - `timestamp` (ISO datetime, опционально — по умолчанию now())
-  - `metadata` (произвольный JSON, опционально)
+- `deviceId` (UUID, required)
+- `metrics` (1-100 items)
+  - `name` (1-128 chars, `[a-zA-Z0-9._-]`)
+  - `value` (number, required)
+  - `unit` (string, up to 32 chars, optional)
+  - `timestamp` (ISO datetime, optional — defaults to now())
+  - `metadata` (arbitrary JSON, optional)
 
-Ответ (201):
+Response (201):
 ```json
 { "ingested": 2, "duplicatesSkipped": 0 }
 ```
@@ -98,178 +98,178 @@ POST /api/v1/telemetry
 GET /api/v1/devices/:deviceId/analytics?from=2026-06-01T00:00:00Z&to=2026-06-21T23:59:59Z&aggregation=hourly&limit=100
 ```
 
-Query-параметры:
-| Параметр | Тип | Обязательный | Описание |
+Query parameters:
+| Parameter | Type | Required | Description |
 |---|---|---|---|
-| `from` | ISO datetime | Да | Начало периода |
-| `to` | ISO datetime | Да | Конец периода |
-| `aggregation` | `hourly` / `daily` | Нет | Агрегация (по умолчанию `hourly`) |
-| `limit` | int 1-1000 | Нет | Лимит результатов (по умолчанию 100) |
+| `from` | ISO datetime | Yes | Start of period |
+| `to` | ISO datetime | Yes | End of period |
+| `aggregation` | `hourly` / `daily` | No | Aggregation level (default `hourly`) |
+| `limit` | int 1-1000 | No | Max results (default 100) |
 
-## База данных
+## Database
 
-### Модели Prisma
+### Prisma Models
 
-**devices** — IoT-устройства
-| Поле | Тип | Описание |
+**devices** — IoT devices
+| Field | Type | Description |
 |---|---|---|
-| `id` | UUID | Первичный ключ |
-| `external_id` | String | Внешний ID (уникальный) |
-| `name` | String | Название устройства |
-| `type` | String | Тип: `temperature`, `humidity`, `pressure`, `motion`, `light`, `custom` |
-| `firmware` | String? | Версия прошивки |
-| `is_active` | Boolean | Активно ли устройство |
-| `last_seen_at` | DateTime? | Последнее получение телеметрии |
+| `id` | UUID | Primary key |
+| `external_id` | String | External ID (unique) |
+| `name` | String | Device name |
+| `type` | String | `temperature`, `humidity`, `pressure`, `motion`, `light`, `custom` |
+| `firmware` | String? | Firmware version |
+| `is_active` | Boolean | Whether device is active |
+| `last_seen_at` | DateTime? | Last telemetry received |
 
-**telemetry_metrics** — метрики телеметрии
-| Поле | Тип | Описание |
+**telemetry_metrics** — telemetry metrics
+| Field | Type | Description |
 |---|---|---|
-| `id` | UUID | Первичный ключ |
-| `device_id` | String | FK -> devices.id (каскадное удаление) |
-| `name` | String | Название метрики |
-| `value` | Float | Значение |
-| `unit` | String? | Единица измерения |
-| `timestamp` | DateTime | Время измерения |
-| `metadata` | Json? | Доп. данные |
+| `id` | UUID | Primary key |
+| `device_id` | String | FK -> devices.id (cascade delete) |
+| `name` | String | Metric name |
+| `value` | Float | Metric value |
+| `unit` | String? | Unit of measurement |
+| `timestamp` | DateTime | Measurement timestamp |
+| `metadata` | Json? | Additional data |
 
-Уникальное ограничение: `[device_id, name, timestamp]`
+Unique constraint: `[device_id, name, timestamp]`
 
-**alerts** — алерты
-| Поле | Тип | Описание |
+**alerts** — alerts
+| Field | Type | Description |
 |---|---|---|
-| `id` | UUID | Первичный ключ |
+| `id` | UUID | Primary key |
 | `device_id` | String | FK -> devices.id |
-| `type` | String | Тип алерта |
+| `type` | String | Alert type |
 | `severity` | Enum | `INFO`, `WARNING`, `CRITICAL` |
-| `message` | String | Текст алерта |
-| `value` / `threshold` | Float | Значение и порог |
+| `message` | String | Alert message |
+| `value` / `threshold` | Float | Value and threshold |
 
-## Инфраструктура
+## Infrastructure
 
-### Redis (кэш / идемпотентность)
+### Redis (cache / idempotency)
 
-- **IdempotencyStore** — предотвращает дублирование метрик (TTL 1 час по умолчанию)
-- **Distributed Lock** — распределённые блокировки через `SET ... NX PX`
-- Автоматическое переподключение с экспоненциальной задержкой
+- **IdempotencyStore** — prevents duplicate metric ingestion (TTL 1 hour by default)
+- **Distributed Lock** — distributed locking via `SET ... NX PX`
+- Auto-reconnect with exponential backoff
 
-### RabbitMQ (очередь сообщений)
+### RabbitMQ (message queue)
 
-- Долговременная очередь с TTL 24 часа и лимитом 1M сообщений
+- Durable queue with 24h TTL and 1M message limit
 - Prefetch count: 10
-- Автоматическое переподключение (до 10 попыток)
-- Два пути ingestion: HTTP REST API и асинхронный RabbitMQ-consumer
+- Auto-reconnect (up to 10 attempts)
+- Dual ingestion paths: HTTP REST API and async RabbitMQ consumer
 
-### DI-контейнер (Awilix)
+### DI Container (Awilix)
 
-Все зависимости регистрируются как синглтоны: PrismaClient, Redis, RabbitMQ, репозитории, use cases, контроллеры, producer/consumer.
+All dependencies registered as singletons: PrismaClient, Redis, RabbitMQ, repositories, use cases, controllers, producer/consumer.
 
-## Запуск
+## Getting Started
 
-### Вариант 1: Docker Compose (рекомендуется)
+### Option 1: Docker Compose (recommended)
 
 ```bash
 cd iot-telemetry-service
 docker-compose up -d
 ```
 
-Поднимет:
-- PostgreSQL (порт **5433**)
-- Redis (порт **6380**)
-- RabbitMQ (порт **5672**, Management UI: **15672**)
-- Приложение (порт **3000**)
+Starts:
+- PostgreSQL (port **5433**)
+- Redis (port **6380**)
+- RabbitMQ (port **5672**, Management UI: **15672**)
+- Application (port **3000**)
 
-Остановка:
+Stop:
 ```bash
 docker-compose down
 ```
 
-Остановка с удалением данных:
+Stop with data cleanup:
 ```bash
 docker-compose down -v
 ```
 
-### Вариант 2: Локальная разработка
+### Option 2: Local Development
 
 ```bash
 cd iot-telemetry-service
 
-# Установка зависимостей
+# Install dependencies
 npm install
 
-# Копирование переменных окружения
+# Copy environment variables
 cp .env.example .env
 
-# Генерация Prisma-клиента
+# Generate Prisma client
 npm run db:generate
 
-# Запуск миграций БД
+# Run database migrations
 npm run db:migrate
 
-# Запуск в dev-режиме (hot reload)
+# Start in dev mode (hot reload)
 npm run dev
 ```
 
-### Вариант 3: Production-сборка
+### Option 3: Production Build
 
 ```bash
-# Компиляция TypeScript
+# Compile TypeScript
 npm run build
 
-# Запуск
+# Start
 npm start
 ```
 
-## Переменные окружения
+## Environment Variables
 
-| Переменная | Значение по умолчанию | Описание |
+| Variable | Default | Description |
 |---|---|---|
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/iot_telemetry` | Строка подключения к PostgreSQL |
-| `REDIS_URL` | `redis://localhost:6379` | Строка подключения к Redis |
-| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672` | Строка подключения к RabbitMQ |
-| `RABBITMQ_QUEUE` | `telemetry-ingestion` | Имя очереди для телеметрии |
-| `LOG_LEVEL` | `info` | Уровень логирования (`debug`, `info`, `warn`, `error`) |
-| `NODE_ENV` | `development` | Режим (`development` включает pino-pretty) |
-| `PORT` | `3000` | Порт HTTP-сервера |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/iot_telemetry` | PostgreSQL connection string |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
+| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672` | RabbitMQ AMQP connection string |
+| `RABBITMQ_QUEUE` | `telemetry-ingestion` | Queue name for telemetry messages |
+| `LOG_LEVEL` | `info` | Log level (`debug`, `info`, `warn`, `error`) |
+| `NODE_ENV` | `development` | Environment (`development` enables pino-pretty) |
+| `PORT` | `3000` | HTTP server port |
 
-## Тестирование
+## Testing
 
 ```bash
-# Unit-тесты
+# Unit tests
 npm test
 
-# Watch-режим
+# Watch mode
 npm run test:watch
 
-# Интеграционные тесты (требуют Docker)
+# Integration tests (requires Docker)
 npm run test:integration
 ```
 
-Интеграционные тесты используют **Testcontainers** для запуска реальных PostgreSQL и RabbitMQ контейнеров.
+Integration tests use **Testcontainers** to spin up real PostgreSQL and RabbitMQ containers.
 
-### Ключевые сценарии тестов:
-- Успешный ingestion телеметрии для существующего устройства
-- Ошибка при ingestion для несуществующего устройства
-- Идемпотентность — дубликаты пропускаются
+### Key test scenarios:
+- Successful telemetry ingestion for a valid device
+- Failure when ingesting for a non-existent device
+- Idempotency — duplicate metrics are skipped
 
-## Линтинг и форматирование
+## Linting & Formatting
 
 ```bash
-npm run lint          # Проверка ESLint
-npm run lint:fix      # Автоисправление
-npm run format        # Форматирование через Prettier
+npm run lint          # ESLint check
+npm run lint:fix      # Auto-fix
+npm run format        # Prettier formatting
 ```
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/ci.yml`) выполняет при пуше/PR в `main`:
+GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 
 1. **lint** — ESLint + Prettier
-2. **test** — Vitest с реальными PostgreSQL, Redis, RabbitMQ (через Services)
-3. **build** — TypeScript-компиляция (зависит от lint + test)
+2. **test** — Vitest with real PostgreSQL, Redis, RabbitMQ (via Services)
+3. **build** — TypeScript compilation (depends on lint + test)
 
-## Примеры запросов
+## Example Requests
 
-### Запись телеметрии
+### Ingest Telemetry
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/telemetry \
@@ -283,12 +283,12 @@ curl -X POST http://localhost:3000/api/v1/telemetry \
   }'
 ```
 
-### Получение аналитики
+### Get Analytics
 
 ```bash
 curl "http://localhost:3000/api/v1/devices/550e8400-e29b-41d4-a716-446655440000/analytics?from=2026-06-01T00:00:00Z&to=2026-06-21T23:59:59Z&aggregation=hourly"
 ```
 
-## Лицензия
+## License
 
 MIT
