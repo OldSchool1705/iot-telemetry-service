@@ -1,0 +1,75 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Device {
+  id          String   @id @default(uuid())
+  externalId  String   @unique
+  name        String
+  type        String
+  firmware    String?
+  isActive    Boolean  @default(true)
+  lastSeenAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  metrics     TelemetryMetric[]
+  alerts      Alert[]
+
+  @@index([externalId])
+  @@index([isActive])
+  @@index([type])
+  @@map("devices")
+}
+
+model TelemetryMetric {
+  id        String   @id @default(uuid())
+  deviceId  String
+  name      String
+  value     Float
+  unit      String?
+  timestamp DateTime @default(now())
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, name, timestamp])
+  @@index([deviceId, timestamp(sort: Desc)])
+  @@index([name, timestamp(sort: Desc)])
+  @@index([timestamp(sort: Desc)])
+  @@map("telemetry_metrics")
+}
+
+model Alert {
+  id        String   @id @default(uuid())
+  deviceId  String
+  type      String
+  severity  AlertSeverity
+  message   String
+  value     Float
+  threshold Float
+  isResolved Boolean @default(false)
+  resolvedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, createdAt(sort: Desc)])
+  @@index([severity, isResolved])
+  @@index([type, createdAt(sort: Desc)])
+  @@map("alerts")
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
